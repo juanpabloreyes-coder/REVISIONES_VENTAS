@@ -1,0 +1,12 @@
+# Datos generados localmente (contienen informacion operativa)
+Data/VENTAS_REVISIONES.json
+Dashboard/Revisiones-Ventas-Report.html
+
+# Cache local, logs y temporales
+cache/
+__pycache__/
+Automation/
+*.tmp
+Thumbs.db
+Desktop.ini
+~$*

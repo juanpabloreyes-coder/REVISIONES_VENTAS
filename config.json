@@ -1,0 +1,23 @@
+{
+  "aps": {
+    "account_id": "17fefe95-3b69-4d44-bb94-0cbec2173aea",
+    "project_id": "5f587011-eb8e-4072-b4df-f16aee3915aa"
+  },
+  "proyecto_acc": "VENTAS GCP",
+
+  "callback_url": "http://localhost:8765/callback",
+  "raiz_nombres": ["Project Files", "Archivos de proyecto", "Plans"],
+
+  "zona_horaria_utc": -6,
+  "jornada": {"inicio": "08:00", "fin": "18:00", "dias": [0, 1, 2, 3, 4]},
+
+  "equipos_xlsx": "C:\\Users\\Usuario\\DC\\ACCDocs\\GCPEASA\\GCP_TRANSFORMACIÓN_DIGITAL\\Project Files\\01_IMPLEMENTACIÓN_BIM\\0112_SQDCM\\Equipos e integrantes - VENTAS.xlsx",
+  "equipos_hoja": "Integrantes",
+  "alias_personas": {},
+  "solo_integrantes_listado": true,
+
+  "cache": "cache/revisiones.json",
+  "json": "Data/VENTAS_REVISIONES.json",
+  "plantilla": "Dashboard/Revisiones-Ventas-Report.template.html",
+  "html": "Dashboard/Revisiones-Ventas-Report.html"
+}
