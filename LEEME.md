@@ -20,16 +20,18 @@ La API de Reviews exige sesion de usuario (como Issues). Se usa **la misma sesio
 (mas de ~2 semanas sin encender la PC): `python -m rev_sync login` (sirve para los dos reportes).
 
 ## Reglas
-- Pasos del flujo por su TIPO en ACC: **Iniciador** (INITIATOR) -> **Revision BIM** (primer REVIEWER, p.ej.
-  "Revision inicial 5D") -> **Revision final** (APPROVER). Si un flujo no los trae, palabras clave como en Power Query.
-- **Hrs->BIM** = horas laborales entre el envio del iniciador y la revision BIM.
-  **Hrs BIM->Final** = entre la revision BIM y la final. Horas laborales: lun-vie 08:00-18:00, UTC-6, sin feriados
-  (misma formula `fxHorasLaborales` del Power Query). Configurable en `config.json` > `jornada`.
-- **Seguimiento activo**: revisiones abiertas esperando BIM o final; las horas se recalculan al abrir el HTML.
+- Una sola medida: el **ciclo** = horas laborales del **envio** (paso INITIATOR) a la **aprobacion final**
+  (paso APPROVER). Los pasos intermedios del flujo, si los hay, no se reportan.
+- Horas laborales: lun-vie 08:00-18:00, UTC-6, sin feriados (misma formula `fxHorasLaborales` del Power Query).
+  Configurable en `config.json` > `jornada`.
+- **Seguimiento activo**: revisiones abiertas con las horas transcurridas desde el envio y a quien le toca;
+  se recalculan al abrir el HTML.
 - **Proyecto** = carpeta de primer nivel dentro de Project Files del documento revisado (como ISSUES).
 - Solo cuentan revisiones cuyo **iniciador** esta en `Equipos e integrantes - VENTAS.xlsx`
-  (`solo_integrantes_listado`). Revisores BIM y responsables finales se muestran aunque no esten en el Excel.
+  (`solo_integrantes_listado`). Los aprobadores se muestran aunque no esten en el Excel.
 - Estados: CLOSED = cerrada, OPEN = abierta, VOID = anulada. % cerradas = cerradas / total.
+- `revisiones_excluidas` (config.json): numeros (#) de revision que no cuentan en nada. Hoy: las pruebas de
+  mayo que quedaron abiertas (#10-#25) o anuladas (#1) cuando el flujo aun no estaba definido.
 
 ## Cache
 `cache\revisiones.json`: pasos y documentos de cada revision. Las cerradas/anuladas sin cambios no se

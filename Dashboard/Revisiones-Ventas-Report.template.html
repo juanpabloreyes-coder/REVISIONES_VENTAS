@@ -86,24 +86,18 @@ tbody tr:hover{background:rgba(0,122,255,.045)}.scroll{max-height:420px;overflow
   </section>
 
   <section class="kpis" id="kpis"></section>
-  <div class="avisos" id="avisos"></div>
 
   <section class="row">
     <div class="card"><div class="head"><div><p class="eyebrow">Resumen</p><h2>Por proyecto</h2></div><span>Cierre, volumen y promedio de horas laborales</span></div><div class="scroll" id="t-proy"></div></div>
   </section>
   <section class="row">
-    <div class="card"><div class="head"><div><p class="eyebrow">Seguimiento activo</p><h2>En espera ahora</h2></div><span id="act-sub">Horas laborales acumuladas<br>(se recalculan al abrir)</span></div><div class="scroll" id="t-activas"></div>
-      <p class="note">Revisiones abiertas y no anuladas. "Desde" es el momento en que la revisión llegó al paso actual (envío del iniciador o aprobación BIM).</p></div>
+    <div class="card"><div class="head"><div><p class="eyebrow">Seguimiento activo</p><h2>En espera ahora</h2></div><span>Horas laborales desde el envío<br>(se recalculan al abrir)</span></div><div class="scroll" id="t-activas"></div>
+      <p class="note">Revisiones abiertas y no anuladas, con las horas laborales transcurridas desde su envío.</p></div>
   </section>
 
   <section class="row two">
-    <div class="card"><div class="head"><div><p class="eyebrow">Tiempos críticos</p><h2>Iniciador → BIM</h2></div><span>Las más tardadas<br>(incluye las que siguen esperando)</span></div><div class="body" id="crit-bim"></div></div>
-    <div class="card"><div class="head"><div><p class="eyebrow">Tiempos críticos</p><h2>BIM → Final</h2></div><span>Las más tardadas<br>(incluye las que siguen esperando)</span></div><div class="body" id="crit-fin"></div></div>
-  </section>
-
-  <section class="row two">
-    <div class="card"><div class="head"><div><p class="eyebrow">Desempeño</p><h2>Revisores BIM</h2></div><span>Revisiones atendidas y horas</span></div><div id="t-bim"></div></div>
-    <div class="card"><div class="head"><div><p class="eyebrow">Desempeño</p><h2>Responsables finales</h2></div><span>Revisiones atendidas y horas</span></div><div id="t-fin"></div></div>
+    <div class="card"><div class="head"><div><p class="eyebrow">Tiempos críticos</p><h2>Ciclos más largos</h2></div><span>Envío → aprobación<br>(incluye las que siguen abiertas)</span></div><div class="body" id="crit-ciclo"></div></div>
+    <div class="card"><div class="head"><div><p class="eyebrow">Desempeño</p><h2>Aprobadores</h2></div><span>Revisiones aprobadas y ciclo</span></div><div id="t-apr"></div></div>
   </section>
 
   <section class="row">
@@ -153,13 +147,12 @@ const prom = a => { const v = a.filter(x => x != null); return v.length ? v.redu
 const max = a => { const v = a.filter(x => x != null); return v.length ? Math.max(...v) : null; };
 const pillEstado = e => `<span class="pill ${e==='CLOSED'?'closed':e==='OPEN'?'open':e==='VOID'?'void':''}">${e==='CLOSED'?'Cerrada':e==='OPEN'?'Abierta':e==='VOID'?'Anulada':esc(e)}</span>`;
 
-// Horas en vivo para lo que sigue esperando
+// Horas en vivo: para las abiertas, el ciclo va corriendo desde el envio
 const NOW = ahoraLocal();
 ROWS.forEach(r => {
-  r._ini = parse(r.FechaInitiator); r._bim = parse(r.FechaBIM);
+  r._ini = parse(r.FechaInitiator);
   r.Mes = (r.FechaInitiator || r.Creada || '').slice(0,7);
-  r._esperaBim = (r.Estado === 'OPEN' && r.Etapa === 'En revision BIM') ? horasLab(r._ini, NOW) : null;
-  r._esperaFin = (r.Estado === 'OPEN' && r.Etapa === 'En revision final') ? horasLab(r._bim, NOW) : null;
+  r._cicloVivo = r.Estado === 'OPEN' ? horasLab(r._ini, NOW) : null;
 });
 
 // ---------------- filtros
@@ -186,6 +179,8 @@ function tabla(cols, filas, vacio){
   return `<table><thead><tr>${cols.map(c => `<th class="${c.n?'num':''}">${c.t}</th>`).join('')}</tr></thead><tbody>${
     filas.map(f => `<tr>${cols.map(c => `<td class="${c.n?'num':''}" title="${esc(typeof c.v==='function'?'':f[c.v])}">${typeof c.v==='function'?c.v(f):esc(f[c.v])}</td>`).join('')}</tr>`).join('')}</tbody></table>`;
 }
+const H = h => `<span class="hrs ${clsH(h)}">${fmtH(h)}</span>`;
+const HV = (h, vivo) => h != null ? H(h) : (vivo != null ? H(vivo) + '<i class="tag">ESPERA</i>' : '—');
 function ranking(el, filas, campoH, campoVivo){
   const items = filas.map(r => ({r, h: r[campoH] != null ? r[campoH] : r[campoVivo], vivo: r[campoH] == null && r[campoVivo] != null}))
                      .filter(x => x.h != null).sort((a,b) => b.h - a.h).slice(0,8);
@@ -200,6 +195,7 @@ function porPersona(filas, campo, campoH){
   filas.forEach(r => { const p = r[campo]; if(!p || p === 'Pendiente') return; (g[p] = g[p] || []).push(r[campoH]); });
   return Object.entries(g).map(([p, hs]) => ({p, n: hs.length, prom: prom(hs), max: max(hs)})).sort((a,b) => b.n - a.n);
 }
+const colsP = [{t:'Persona', v:'p'}, {t:'Aprobadas', v:'n', n:1}, {t:'Promedio', v: f => H(f.prom), n:1}, {t:'Máximo', v: f => H(f.max), n:1}];
 
 function render(){
   [...$('f-proy').children].forEach(b => b.classList.toggle('active', b.dataset.v === estado.proy));
@@ -210,56 +206,48 @@ function render(){
   $('pct').textContent = pct + '%'; $('donut').style.setProperty('--p', (pct*3.6) + 'deg');
   $('c-total').textContent = tot; $('c-open').textContent = abi; $('c-closed').textContent = cer;
 
-  const pBim = prom(F.map(r => r.HrsBIM)), pFin = prom(F.map(r => r.HrsFinal));
-  const mBim = max(F.map(r => r.HrsBIM != null ? r.HrsBIM : r._esperaBim)), mFin = max(F.map(r => r.HrsFinal != null ? r.HrsFinal : r._esperaFin));
-  const enBim = F.filter(r => r._esperaBim != null).length, enFin = F.filter(r => r._esperaFin != null).length;
+  const pCiclo = prom(F.map(r => r.HrsCiclo)), mCiclo = max(F.map(r => r.HrsCiclo));
+  const pEspera = prom(F.map(r => r._cicloVivo)), mEspera = max(F.map(r => r._cicloVivo));
+  const tono = h => clsH(h)==='r' ? 'bad' : clsH(h)==='a' ? 'warn' : '';
   const k = (t, v, s, c) => `<div class="card kpi ${c||''}"><span>${t}</span><strong>${v}</strong><small>${s}</small></div>`;
   $('kpis').innerHTML =
     k('Revisiones', tot, `${cer} cerradas · ${abi} abiertas · ${anu} anuladas`) +
-    k('Esperando BIM', enBim, 'abiertas en el paso BIM', enBim ? 'warn' : 'good') +
-    k('Esperando final', enFin, 'abiertas en el paso final', enFin ? 'warn' : 'good') +
     k('% cerradas', pct + '%', 'cerradas / total', pct >= 80 ? 'good' : '') +
-    k('Prom. Iniciador → BIM', fmtH(pBim), 'horas laborales, pasos terminados') +
-    k('Prom. BIM → Final', fmtH(pFin), 'horas laborales, pasos terminados') +
-    k('Máx. espera BIM', fmtH(mBim), 'incluye las que siguen esperando', clsH(mBim)==='r'?'bad':clsH(mBim)==='a'?'warn':'') +
-    k('Máx. espera final', fmtH(mFin), 'incluye las que siguen esperando', clsH(mFin)==='r'?'bad':clsH(mFin)==='a'?'warn':'');
+    k('Prom. ciclo', fmtH(pCiclo), 'envío → aprobación, cerradas', tono(pCiclo)) +
+    k('Máx. ciclo', fmtH(mCiclo), 'la cerrada que más tardó', tono(mCiclo)) +
+    k('En espera', abi, 'abiertas sin aprobar', abi ? 'warn' : 'good') +
+    k('Prom. espera actual', fmtH(pEspera), 'horas desde el envío, abiertas', tono(pEspera)) +
+    k('Máx. espera actual', fmtH(mEspera), 'la abierta más antigua', tono(mEspera)) +
+    k('Anuladas', anu, 'no cuentan en tiempos');
 
   // Resumen por proyecto
   const gp = {}; F.forEach(r => (gp[r.Proyecto] = gp[r.Proyecto] || []).push(r));
   const proys = Object.entries(gp).map(([p, rs]) => ({p, n: rs.length, c: rs.filter(r=>r.Estado==='CLOSED').length, a: rs.filter(r=>r.Estado==='OPEN').length,
-    hb: prom(rs.map(r=>r.HrsBIM)), hf: prom(rs.map(r=>r.HrsFinal))})).sort((a,b) => b.n - a.n);
+    hc: prom(rs.map(r=>r.HrsCiclo)), he: max(rs.map(r=>r._cicloVivo))})).sort((a,b) => b.n - a.n);
   $('t-proy').innerHTML = tabla([
     {t:'Proyecto', v:'p'}, {t:'Total', v:'n', n:1}, {t:'Cerradas', v:'c', n:1}, {t:'Abiertas', v:'a', n:1},
     {t:'% cierre', v: f => { const x = f.n ? Math.round(f.c/f.n*100) : 0; return `<div style="display:flex;gap:7px;align-items:center"><div class="bar" style="flex:1;min-width:60px"><i style="width:${x}%"></i></div><b>${x}%</b></div>`; }},
-    {t:'Prom. → BIM', v: f => `<span class="hrs ${clsH(f.hb)}">${fmtH(f.hb)}</span>`, n:1},
-    {t:'Prom. BIM → Final', v: f => `<span class="hrs ${clsH(f.hf)}">${fmtH(f.hf)}</span>`, n:1}
+    {t:'Prom. ciclo', v: f => H(f.hc), n:1}, {t:'Máx. espera actual', v: f => H(f.he), n:1}
   ], proys);
 
   // Seguimiento activo
-  const act = F.filter(r => r._esperaBim != null || r._esperaFin != null)
-    .map(r => ({...r, _paso: r._esperaBim != null ? 'BIM' : 'Final', _desde: r._esperaBim != null ? r.FechaInitiator : r.FechaBIM, _h: r._esperaBim != null ? r._esperaBim : r._esperaFin}))
-    .sort((a,b) => b._h - a._h);
+  const act = F.filter(r => r._cicloVivo != null).sort((a,b) => b._cicloVivo - a._cicloVivo);
   $('t-activas').innerHTML = tabla([
-    {t:'Proyecto', v:'Proyecto'}, {t:'#', v:'Rev', n:1}, {t:'Revisión', v:'Nombre'}, {t:'Paso', v:'_paso'},
+    {t:'Proyecto', v:'Proyecto'}, {t:'#', v:'Rev', n:1}, {t:'Revisión', v:'Nombre'}, {t:'Iniciador', v:'Initiator'},
     {t:'Pendiente de', v: f => '<div class="wrap">' + esc(f.PendienteDe || '—') + (f.Reclamada ? '' : ' <i class="tag">SIN RECLAMAR</i>') + '</div>'},
-    {t:'Desde', v: f => fmtF(f._desde)}, {t:'Horas', v: f => `<span class="hrs ${clsH(f._h)}">${fmtH(f._h)}</span>`, n:1}
+    {t:'Enviada', v: f => fmtF(f.FechaInitiator)}, {t:'Horas', v: f => H(f._cicloVivo), n:1}
   ], act, 'No hay revisiones en espera con estos filtros.');
 
-  ranking($('crit-bim'), F, 'HrsBIM', '_esperaBim');
-  ranking($('crit-fin'), F, 'HrsFinal', '_esperaFin');
-
-  const colsP = [{t:'Persona', v:'p'}, {t:'Atendidas', v:'n', n:1}, {t:'Promedio', v: f => `<span class="hrs ${clsH(f.prom)}">${fmtH(f.prom)}</span>`, n:1}, {t:'Máximo', v: f => `<span class="hrs ${clsH(f.max)}">${fmtH(f.max)}</span>`, n:1}];
-  $('t-bim').innerHTML = tabla(colsP, porPersona(F.filter(r => r.FechaBIM), 'ReviewerBIM', 'HrsBIM'));
-  $('t-fin').innerHTML = tabla(colsP, porPersona(F.filter(r => r.FechaFinal), 'RespFinal', 'HrsFinal'));
+  ranking($('crit-ciclo'), F, 'HrsCiclo', '_cicloVivo');
+  $('t-apr').innerHTML = tabla(colsP, porPersona(F.filter(r => r.FechaAprobacion), 'Aprobador', 'HrsCiclo'));
 
   // Responsabilidad por iniciador
   const gi = {}; F.forEach(r => (gi[r.Initiator] = gi[r.Initiator] || []).push(r));
   const resp = Object.entries(gi).map(([p, rs]) => ({p, eq: rs[0].Equipo, n: rs.length, c: rs.filter(r=>r.Estado==='CLOSED').length,
-    a: rs.filter(r=>r.Estado==='OPEN').length, v: rs.filter(r=>r.Estado==='VOID').length,
-    ciclo: prom(rs.filter(r => r.Estado==='CLOSED').map(r => horasLab(r._ini, parse(r.FechaFinal)))) })).sort((a,b) => b.n - a.n);
+    a: rs.filter(r=>r.Estado==='OPEN').length, v: rs.filter(r=>r.Estado==='VOID').length, ciclo: prom(rs.map(r => r.HrsCiclo)) })).sort((a,b) => b.n - a.n);
   $('t-resp').innerHTML = tabla([
     {t:'Integrante', v:'p'}, {t:'Equipo', v:'eq'}, {t:'Enviadas', v:'n', n:1}, {t:'Cerradas', v:'c', n:1}, {t:'Abiertas', v:'a', n:1}, {t:'Anuladas', v:'v', n:1},
-    {t:'Ciclo prom. (cerradas)', v: f => `<span class="hrs ${clsH(f.ciclo)}">${fmtH(f.ciclo)}</span>`, n:1}
+    {t:'Ciclo prom. (cerradas)', v: f => H(f.ciclo), n:1}
   ], resp);
 
   // Barra lateral: por equipo
@@ -272,12 +260,12 @@ function render(){
 
 function renderDetalle(F){
   const q = $('q').value.trim().toLowerCase();
-  const rows = q ? F.filter(r => [r.Nombre, r.Proyecto, r.Initiator, r.ReviewerBIM, r.RespFinal, r.Archivos, r.PendienteDe, String(r.Rev)].join(' ').toLowerCase().includes(q)) : F;
+  const rows = q ? F.filter(r => [r.Nombre, r.Proyecto, r.Initiator, r.Aprobador, r.Archivos, r.PendienteDe, String(r.Rev)].join(' ').toLowerCase().includes(q)) : F;
   $('t-det').innerHTML = tabla([
     {t:'Proyecto', v:'Proyecto'}, {t:'#', v:'Rev', n:1}, {t:'Revisión', v:'Nombre'}, {t:'Estado', v: f => pillEstado(f.Estado)},
-    {t:'Iniciador', v:'Initiator'}, {t:'Envío', v: f => fmtF(f.FechaInitiator)},
-    {t:'Revisor BIM', v:'ReviewerBIM'}, {t:'Fecha BIM', v: f => fmtF(f.FechaBIM)}, {t:'Hrs → BIM', v: f => f.HrsBIM != null ? `<span class="hrs ${clsH(f.HrsBIM)}">${fmtH(f.HrsBIM)}</span>` : (f._esperaBim != null ? `<span class="hrs ${clsH(f._esperaBim)}">${fmtH(f._esperaBim)}</span><i class="tag">ESPERA</i>` : '—'), n:1},
-    {t:'Resp. final', v:'RespFinal'}, {t:'Fecha final', v: f => fmtF(f.FechaFinal)}, {t:'Hrs BIM → Final', v: f => f.HrsFinal != null ? `<span class="hrs ${clsH(f.HrsFinal)}">${fmtH(f.HrsFinal)}</span>` : (f._esperaFin != null ? `<span class="hrs ${clsH(f._esperaFin)}">${fmtH(f._esperaFin)}</span><i class="tag">ESPERA</i>` : '—'), n:1},
+    {t:'Iniciador', v:'Initiator'}, {t:'Enviada', v: f => fmtF(f.FechaInitiator)},
+    {t:'Aprobador', v: f => esc(f.Aprobador || (f.Estado === 'OPEN' ? 'Pendiente' : '—'))}, {t:'Aprobada', v: f => fmtF(f.FechaAprobacion)},
+    {t:'Ciclo', v: f => HV(f.HrsCiclo, f._cicloVivo), n:1},
     {t:'Documentos', v:'Archivos'}
   ], rows);
 }
@@ -287,7 +275,7 @@ const g = DATA.generatedAt ? new Date(DATA.generatedAt) : null;
 $('gen').textContent = g ? 'Actualizado: ' + g.toLocaleString('es-MX', {dateStyle:'short', timeStyle:'short'}) : '';
 $('jornada').textContent = `Horas laborales: lun–vie ${META.inicio}–${META.fin} (UTC${META.zona})`;
 $('acc-project').textContent = META.proyectoAcc || 'VENTAS GCP';
-$('sub').textContent = `${ROWS.length} revisiones · Iniciador → Revisión BIM → Revisión final`;
+$('sub').textContent = `${ROWS.length} revisiones · ciclo del envío a la aprobación`;
 render();
 })();
 </script>

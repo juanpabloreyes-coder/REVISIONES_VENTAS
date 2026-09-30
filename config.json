@@ -16,6 +16,9 @@
   "alias_personas": {},
   "solo_integrantes_listado": true,
 
+  "_revisiones_excluidas": "Numeros (#) de revision que no cuentan: pruebas de mayo que quedaron abiertas/anuladas cuando el flujo no estaba definido.",
+  "revisiones_excluidas": [1, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25],
+
   "cache": "cache/revisiones.json",
   "json": "Data/VENTAS_REVISIONES.json",
   "plantilla": "Dashboard/Revisiones-Ventas-Report.template.html",

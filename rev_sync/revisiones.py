@@ -2,12 +2,12 @@
 
 Por cada revision de ACC (Docs > Revisiones):
   - Initiator   = quien envio la revision (paso INITIATOR) y cuando.
-  - Reviewer BIM = paso REVIEWER (p.ej. "Revision inicial 5D"): quien lo resolvio y cuando.
-  - Resp. Final = paso APPROVER (p.ej. "Revision final"): quien lo resolvio y cuando.
-  - Hrs->BIM y Hrs BIM->Final = horas LABORALES entre esos momentos (lun-vie 08:00-18:00, UTC-6).
+  - Aprobador = paso APPROVER (aprobacion final): quien lo resolvio y cuando.
+  - HrsCiclo  = horas LABORALES del envio a la aprobacion final (lun-vie 08:00-18:00, UTC-6).
+  Los pasos intermedios del flujo no se reportan: solo cuenta el ciclo completo.
   - Proyecto = carpeta de primer nivel dentro de Project Files del documento revisado (como ISSUES).
 Los pasos se identifican por su TIPO en el flujo de ACC (INITIATOR / REVIEWER / APPROVER). Si un flujo
-no los trae, se usan las mismas palabras clave que Power Query (INICIADOR, REVISION/BIM, FINAL...).
+no los trae, se usan las mismas palabras clave que Power Query (INICIADOR, REVISION, FINAL...).
 
 Solo cuentan las revisiones cuyo Initiator esta en el Excel de integrantes (solo_integrantes_listado).
 """
@@ -22,7 +22,7 @@ log = logging.getLogger("rev_sync.revisiones")
 
 PASO_HECHO = {"SUBMITTED", "APPROVED", "REJECTED", "COMPLETED", "COMPLETE", "DONE", "CLOSED", "FINISHED", "RETURNED"}
 PAL_INITIATOR = ("INITIATOR", "INICIADOR", "INICIAR", "INICIO", "INITIAL REVIEW")
-PAL_BIM = ("BIM", "REVIEWER", "REVISOR", "REVISION", "REVISIÓN", "ESPECIALIDAD")
+PAL_INTERMEDIO = ("BIM", "REVIEWER", "REVISOR", "REVISION", "REVISIÓN", "ESPECIALIDAD")
 PAL_FINAL = ("FINAL", "APPROVER", "APPROVAL", "APROBADOR", "APROBACION", "APROBACIÓN")
 
 
@@ -85,26 +85,27 @@ def _tipo_por_palabras(nombre):
         return "INITIATOR"
     if any(p in t for p in PAL_FINAL):
         return "APPROVER"
-    if any(p in t for p in PAL_BIM):
+    if any(p in t for p in PAL_INTERMEDIO):
         return "REVIEWER"
     return None
 
 
 def clasificar_pasos(progreso, flujo):
-    """-> (initiator, bim, final): cada uno es el dict del paso en 'progress' o None.
-    Initiator = primer paso INITIATOR; BIM = primer REVIEWER; Final = ultimo APPROVER
+    """-> (initiator, intermedio, final): cada uno es el dict del paso en 'progress' o None.
+    Initiator = primer paso INITIATOR; intermedio = primer REVIEWER (si el flujo lo tiene; solo se usa
+    para saber a quien le toca una revision abierta); Final = ultimo APPROVER
     (igual que Power Query: First / First / Last)."""
     tipos = {s.get("id"): s.get("type") for s in (flujo or {}).get("steps") or []}
-    ini, bim, fin = None, None, None
+    ini, inter, fin = None, None, None
     for p in progreso or []:
         tipo = tipos.get(p.get("stepId")) or _tipo_por_palabras(p.get("stepName"))
         if tipo == "INITIATOR" and ini is None:
             ini = p
-        elif tipo == "REVIEWER" and bim is None:
-            bim = p
+        elif tipo == "REVIEWER" and inter is None:
+            inter = p
         elif tipo == "APPROVER":
             fin = p
-    return ini, bim, fin
+    return ini, inter, fin
 
 
 def _hecho(p):
@@ -176,11 +177,18 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
     dias = tuple(j.get("dias", [0, 1, 2, 3, 4]))
     solo_listado = cfg.get("solo_integrantes_listado", True)
 
-    filas, fuera, sin_proyecto = [], {}, 0
+    # Revisiones que se ignoran por completo (p.ej. las de prueba de mayo, que quedaron abiertas cuando el
+    # flujo aun no estaba definido). Lista FIJA por numero (#) para que no vuelvan aunque alguien las cierre.
+    excluidas = {int(x) for x in cfg.get("revisiones_excluidas", [])}
+
+    filas, fuera, sin_proyecto, n_excl = [], {}, 0, 0
     for r in revs:
+        if r.get("sequenceId") in excluidas:
+            n_excl += 1
+            continue
         det = detalle.get(r["id"]) or {}
         flujo = flujos.get(r.get("workflowId")) or {}
-        ini, bim, fin = clasificar_pasos(det.get("progress"), flujo)
+        ini, inter, fin = clasificar_pasos(det.get("progress"), flujo)
         estado = str(r.get("status") or "").upper()
 
         iniciador = _quien(ini) or _nombre(r.get("createdBy"))
@@ -190,7 +198,6 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
             continue
 
         f_ini = a_local(ini.get("endTime"), tz) if _hecho(ini) else a_local(r.get("createdAt"), tz)
-        f_bim = a_local(bim.get("endTime"), tz) if _hecho(bim) else None
         f_fin = a_local(fin.get("endTime"), tz) if _hecho(fin) else None
         if f_fin is None and estado == "CLOSED" and fin is not None:
             f_fin = a_local(r.get("finishedAt") or r.get("approvedAt"), tz)
@@ -211,24 +218,16 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
             etapa = "Anulada"
         elif estado == "CLOSED":
             etapa = "Cerrada"
-        elif bim is not None and not _hecho(bim):
-            etapa = "En revision BIM"
-        elif fin is not None and not _hecho(fin):
-            etapa = "En revision final"
         else:
-            etapa = "En proceso"
-        actual = next((p for p in (bim, fin) if p is not None and not _hecho(p)), None) if etapa.startswith("En ") else None
+            etapa = "En revision"
+        actual = next((p for p in (inter, fin) if p is not None and not _hecho(p)), None) if etapa == "En revision" else None
         nab = r.get("nextActionBy") or {}
         reclamada = [_nombre(x) for x in nab.get("claimedBy") or [] if _nombre(x)]
         pendiente_de = ", ".join(reclamada or _candidatos(nab.get("candidates")) or _candidatos((actual or {}).get("candidates")))
 
-        def persona(paso, hecho_fn=_hecho):
-            if paso is None:
-                return None
-            q = _quien(paso)
-            if q:
-                return q
-            return "Pendiente" if not hecho_fn(paso) else "Usuario no encontrado"
+        aprobador = _quien(fin) if _hecho(fin) else None
+        if aprobador is None and estado == "CLOSED":
+            aprobador = _nombre(r.get("approvedBy")) or "Usuario no encontrado"
 
         filas.append({
             "Proyecto": proyecto or "(sin proyecto)",
@@ -241,16 +240,9 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
             "Initiator": iniciador or "Usuario no encontrado",
             "Equipo": equipo,
             "FechaInitiator": _txt(f_ini),
-            "PasoBIM": (bim or {}).get("stepName"),
-            "ReviewerBIM": persona(bim),
-            "EstadoPasoBIM": (bim or {}).get("status"),
-            "FechaBIM": _txt(f_bim),
-            "HrsBIM": horas_laborales(f_ini, f_bim, h_ini, h_fin, dias),
-            "PasoFinal": (fin or {}).get("stepName"),
-            "RespFinal": persona(fin),
-            "EstadoPasoFinal": (fin or {}).get("status"),
-            "FechaFinal": _txt(f_fin),
-            "HrsFinal": horas_laborales(f_bim, f_fin, h_ini, h_fin, dias),
+            "Aprobador": aprobador,
+            "FechaAprobacion": _txt(f_fin),
+            "HrsCiclo": horas_laborales(f_ini, f_fin, h_ini, h_fin, dias),
             "PendienteDe": pendiente_de or None,
             "Reclamada": bool(reclamada),
             "Creada": _txt(a_local(r.get("createdAt"), tz)),
@@ -261,6 +253,8 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
 
     filas.sort(key=lambda f: (f["Creada"] or ""), reverse=True)
     avisos = []
+    if n_excl:
+        log.info("%d revisiones excluidas por configuracion (revisiones_excluidas)", n_excl)
     if fuera:
         avisos.append("Revisiones excluidas porque el iniciador no esta en el Excel de integrantes: " +
                       ", ".join(f"{n} ({c})" for n, c in sorted(fuera.items())))
