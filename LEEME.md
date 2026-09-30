@@ -28,7 +28,9 @@ La API de Reviews exige sesion de usuario (como Issues). Se usa **la misma sesio
   se recalculan al abrir el HTML.
 - **Proyecto** = carpeta de primer nivel dentro de Project Files del documento revisado (como ISSUES).
 - Solo cuentan revisiones cuyo **iniciador** esta en `Equipos e integrantes - VENTAS.xlsx`
-  (`solo_integrantes_listado`). Los aprobadores se muestran aunque no esten en el Excel.
+  (`solo_integrantes_listado`) y, si ya fue aprobada, cuyo **aprobador** tambien esta en el Excel (son los
+  responsables acordados). Si no, la revision no entra en NINGUNA estadistica, grafica ni tabla. En
+  "pendiente de" solo se muestran personas del Excel.
 - Estados: CLOSED = cerrada, OPEN = abierta, VOID = anulada. % cerradas = cerradas / total.
 - `revisiones_excluidas` (config.json): numeros (#) de revision que no cuentan en nada. Hoy: las pruebas de
   mayo que quedaron abiertas (#10-#25) o anuladas (#1) cuando el flujo aun no estaba definido.

@@ -52,9 +52,14 @@ def procesar(cfg, raiz, escribir_salida=True):
     log.info("ACC: %d revisiones (%d consultadas, %d del cache), %d flujos", len(revs), pedidas, len(revs) - pedidas, len(flujos))
 
     xlsx = ruta(cfg["equipos_xlsx"])
-    avisos = []
+    avisos, roster = [], []
     if xlsx.exists():
-        personas = Personas(leer_equipos(xlsx, cfg.get("equipos_hoja", "Integrantes")), cfg.get("alias_personas"))
+        equipos = leer_equipos(xlsx, cfg.get("equipos_hoja", "Integrantes"))
+        personas = Personas(equipos, cfg.get("alias_personas"))
+        por_equipo = {}
+        for e in equipos:
+            por_equipo.setdefault(e["equipo"], []).append(e["integrante"])
+        roster = [{"equipo": k, "integrantes": v} for k, v in por_equipo.items()]
     else:
         avisos.append(f"No se encontro el Excel de equipos: {xlsx}. Todos quedan SIN EQUIPO.")
         personas = Personas([], cfg.get("alias_personas"))
@@ -75,19 +80,17 @@ def procesar(cfg, raiz, escribir_salida=True):
 
     if not escribir_salida:
         return "DIAGNOSTICO: no se escribio ningun archivo."
-    return escribir(filas, cfg, ruta)
+    return escribir(filas, cfg, ruta, roster)
 
 
-def escribir(filas, cfg, ruta):
-    if not filas:
-        return "SIN ACTUALIZACION: no hay revisiones. Se conservan el JSON y el HTML anteriores."
+def escribir(filas, cfg, ruta, roster=None):
     json_path = ruta(cfg.get("json", "Data/VENTAS_REVISIONES.json"))
     html_path = ruta(cfg.get("html", "Dashboard/Revisiones-Ventas-Report.html"))
     plantilla = ruta(cfg.get("plantilla", "Dashboard/Revisiones-Ventas-Report.template.html"))
     j = cfg.get("jornada") or {}
     meta = {"zona": cfg.get("zona_horaria_utc", -6), "inicio": j.get("inicio", "08:00"),
             "fin": j.get("fin", "18:00"), "dias": j.get("dias", [0, 1, 2, 3, 4]),
-            "proyectoAcc": cfg.get("proyecto_acc", "VENTAS GCP")}
+            "proyectoAcc": cfg.get("proyecto_acc", "VENTAS GCP"), "roster": roster or []}
 
     # Sin cambios en los datos: no se reescribe (el HTML recalcula las horas activas al abrirse)
     try:
@@ -112,4 +115,4 @@ def escribir(filas, cfg, ruta):
         tmp = destino.with_suffix(destino.suffix + ".tmp")
         tmp.write_text(contenido, encoding="utf-8")
         tmp.replace(destino)
-    return f"EXPORTACION COMPLETADA: {len(filas)} revisiones."
+    return f"EXPORTACION COMPLETADA: {len(filas)} revisiones." + ("" if filas else " (ninguna cumple los filtros; el reporte queda vacio)")

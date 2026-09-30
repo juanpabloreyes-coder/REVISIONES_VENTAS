@@ -181,7 +181,7 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
     # flujo aun no estaba definido). Lista FIJA por numero (#) para que no vuelvan aunque alguien las cierre.
     excluidas = {int(x) for x in cfg.get("revisiones_excluidas", [])}
 
-    filas, fuera, sin_proyecto, n_excl = [], {}, 0, 0
+    filas, fuera, apr_fuera, sin_proyecto, n_excl = [], {}, {}, 0, 0
     for r in revs:
         if r.get("sequenceId") in excluidas:
             n_excl += 1
@@ -192,7 +192,7 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
         estado = str(r.get("status") or "").upper()
 
         iniciador = _quien(ini) or _nombre(r.get("createdBy"))
-        _, equipo = personas.resolver(iniciador) if iniciador else (None, "SIN EQUIPO")
+        integrante, equipo = personas.resolver(iniciador) if iniciador else (None, "SIN EQUIPO")
         if solo_listado and equipo == "SIN EQUIPO":
             fuera[iniciador or "(sin iniciador)"] = fuera.get(iniciador or "(sin iniciador)", 0) + 1
             continue
@@ -223,11 +223,23 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
         actual = next((p for p in (inter, fin) if p is not None and not _hecho(p)), None) if etapa == "En revision" else None
         nab = r.get("nextActionBy") or {}
         reclamada = [_nombre(x) for x in nab.get("claimedBy") or [] if _nombre(x)]
-        pendiente_de = ", ".join(reclamada or _candidatos(nab.get("candidates")) or _candidatos((actual or {}).get("candidates")))
+        # Iniciador y aprobador deben estar en el Excel de integrantes (son los responsables acordados).
+        # Una revision APROBADA por alguien fuera del listado no cuenta en nada.
+        def del_listado(nombre):
+            return bool(nombre) and personas.resolver(nombre)[1] != "SIN EQUIPO"
+
+        pendientes = reclamada or _candidatos(nab.get("candidates")) or _candidatos((actual or {}).get("candidates"))
+        pendiente_de = ", ".join(n for n in pendientes if n.startswith(("Rol: ", "Empresa: ")) or del_listado(n))
 
         aprobador = _quien(fin) if _hecho(fin) else None
         if aprobador is None and estado == "CLOSED":
-            aprobador = _nombre(r.get("approvedBy")) or "Usuario no encontrado"
+            aprobador = _nombre(r.get("approvedBy"))
+        if solo_listado and aprobador is not None and not del_listado(aprobador):
+            apr_fuera[aprobador] = apr_fuera.get(aprobador, 0) + 1
+            continue
+        if solo_listado and aprobador is None and estado == "CLOSED":
+            apr_fuera["(aprobador desconocido)"] = apr_fuera.get("(aprobador desconocido)", 0) + 1
+            continue
 
         filas.append({
             "Proyecto": proyecto or "(sin proyecto)",
@@ -239,6 +251,7 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
             "Flujo": flujo.get("name"),
             "Initiator": iniciador or "Usuario no encontrado",
             "Equipo": equipo,
+            "Integrante": integrante if equipo != "SIN EQUIPO" else None,
             "FechaInitiator": _txt(f_ini),
             "Aprobador": aprobador,
             "FechaAprobacion": _txt(f_fin),
@@ -258,6 +271,9 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
     if fuera:
         avisos.append("Revisiones excluidas porque el iniciador no esta en el Excel de integrantes: " +
                       ", ".join(f"{n} ({c})" for n, c in sorted(fuera.items())))
+    if apr_fuera:
+        avisos.append("Revisiones excluidas porque el aprobador no esta en el Excel de integrantes: " +
+                      ", ".join(f"{n} ({c})" for n, c in sorted(apr_fuera.items())))
     if sin_proyecto:
         avisos.append(f"{sin_proyecto} revisiones sin proyecto identificado (documentos borrados o fuera de Project Files).")
     return filas, avisos
