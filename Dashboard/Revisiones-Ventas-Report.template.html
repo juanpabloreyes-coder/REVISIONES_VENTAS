@@ -56,6 +56,11 @@ button{font:inherit}
 .filter-label{font-size:.55rem;color:#777d86;text-transform:uppercase;letter-spacing:.16em;font-weight:800;margin-bottom:8px}
 .project-nav{display:flex;gap:5px;flex-wrap:wrap;align-items:center;background:var(--surface-soft);border-radius:17px;padding:5px}
 .month-row{margin:0 0 11px}
+.filter-row{margin:0 0 11px}
+.filter-row:last-child{margin-bottom:0}
+.filter-grid{display:grid;grid-template-columns:minmax(0,1fr) 260px;gap:12px;align-items:end}
+#personFilter{width:100%;padding:9px 13px;border:0;border-radius:999px;color:#3d4249;background:var(--surface-soft);font:inherit;font-size:.62rem;font-weight:700;cursor:pointer}
+@media(max-width:900px){.filter-grid{grid-template-columns:1fr}}
 #monthFilter{width:100%;max-width:260px;padding:9px 13px;border:0;border-radius:999px;color:#3d4249;background:var(--surface-soft);font:inherit;font-size:.62rem;font-weight:700;cursor:pointer}
 .project-btn{border:0;background:transparent;color:#4b5058;border-radius:13px;padding:9px 13px;font-size:.59rem;font-weight:800;cursor:pointer;transition:.16s ease}
 .project-btn span{color:#949aa3;font-weight:700}
@@ -166,9 +171,14 @@ footer{color:#979ca4;font-size:.58rem;text-align:center;padding:4px 0 20px}
     </header>
 
     <section class="card filter-card">
-      <div class="month-row"><div class="filter-label">Mes de inicio</div><select id="monthFilter" aria-label="Filtro por mes de inicio"></select></div>
-      <div class="section-heading"><div><div class="filter-label">Proyecto</div></div><span class="badge" id="reviewBadge"></span></div>
-      <div class="project-nav" id="projectNav" aria-label="Filtro por proyecto"></div>
+      <div class="filter-row"><div class="section-heading" style="margin-bottom:8px"><div><div class="filter-label" style="margin:0">Mes de inicio</div></div><span class="badge" id="reviewBadge"></span></div>
+        <div class="project-nav" id="monthNav" aria-label="Filtro por mes de inicio"></div></div>
+      <div class="filter-row"><div class="filter-label">Proyecto</div>
+        <div class="project-nav" id="projectNav" aria-label="Filtro por proyecto"></div></div>
+      <div class="filter-row filter-grid">
+        <div><div class="filter-label">Disciplina</div><div class="project-nav" id="discNav" aria-label="Filtro por disciplina"></div></div>
+        <div><div class="filter-label">Integrante</div><select id="personFilter" aria-label="Filtro por integrante"></select></div>
+      </div>
     </section>
 
     <section class="card">
@@ -363,28 +373,41 @@ function renderRoster(rows){
 }
 
 // ---- filtros
-let CUR_PROJECT = 'ALL', CUR_MONTH = 'ALL';
+let CUR_PROJECT = 'ALL', CUR_MONTH = 'ALL', CUR_DISC = 'ALL', CUR_PERSON = 'ALL';
 const MONTH_LABEL = m => { const [y,mm] = m.split('-');
   return new Intl.DateTimeFormat('es-MX', {month:'long', year:'numeric', timeZone:'UTC'}).format(new Date(Date.UTC(+y, +mm-1, 1))).replace(/^./, c => c.toUpperCase()); };
-function fillMonths(){
-  const meses = [...new Set(ALL_ROWS.map(r => r._month).filter(Boolean))].sort().reverse();
-  const sel = $('monthFilter');
-  sel.innerHTML = '<option value="ALL">Todos los meses</option>' + meses.map(m => `<option value="${m}">${MONTH_LABEL(m)}</option>`).join('');
-  sel.value = CUR_MONTH;
+const DISC_LABEL = d => ({ARQUITECTURA:'Arquitectura', ESTRUCTURA:'Estructura', ELECTRICA:'Eléctrica', ESPECIALES:'Especiales', MECANICA:'Mecánica', PLOMERIA:'Plomería', 'SIN DISCIPLINA':'Sin disciplina'}[d] || d);
+const personOf = r => r.Integrante || r.Initiator;
+// Cada filtro cuenta con los demas filtros aplicados (menos el propio)
+const pasa = (r, sin) => (sin === 'p' || CUR_PROJECT === 'ALL' || r.Proyecto === CUR_PROJECT)
+  && (sin === 'm' || CUR_MONTH === 'ALL' || r._month === CUR_MONTH)
+  && (sin === 'd' || CUR_DISC === 'ALL' || r.Disciplina === CUR_DISC)
+  && (sin === 'i' || CUR_PERSON === 'ALL' || personOf(r) === CUR_PERSON);
+const visible = r => pasa(r, '');
+function chips(el, clave, cur, valores, etiqueta, onPick){
+  const base = ALL_ROWS.filter(r => pasa(r, clave));
+  const n = v => base.filter(r => (clave === 'p' ? r.Proyecto : clave === 'm' ? r._month : r.Disciplina) === v).length;
+  $(el).innerHTML = `<button class="project-btn${cur === 'ALL' ? ' active' : ''}" type="button" data-v="ALL">Todos <span>(${base.length})</span></button>` +
+    valores.map(v => `<button class="project-btn${cur === v ? ' active' : ''}" type="button" data-v="${escapeHtml(v)}">${escapeHtml(etiqueta(v))} <span>(${n(v)})</span></button>`).join('');
+  $(el).querySelectorAll('.project-btn').forEach(b => b.addEventListener('click', () => onPick(b.dataset.v)));
 }
-function fillProjects(){
-  $('projectNav').innerHTML = `<button class="project-btn" type="button" data-project="ALL">Todos <span>(${ALL_ROWS.length})</span></button>` +
-    PROJECTS.map(p => `<button class="project-btn" type="button" data-project="${escapeHtml(p)}">${escapeHtml(p)} <span>(${ALL_ROWS.filter(r => r.Proyecto === p).length})</span></button>`).join('');
-  document.querySelectorAll('.project-btn').forEach(b => b.addEventListener('click', () => applyProject(b.dataset.project)));
+function fillFilters(){
+  chips('monthNav', 'm', CUR_MONTH, [...new Set(ALL_ROWS.map(r => r._month).filter(Boolean))].sort().reverse(), MONTH_LABEL, v => { CUR_MONTH = v; refresh(); });
+  chips('projectNav', 'p', CUR_PROJECT, PROJECTS, v => v, v => { CUR_PROJECT = v; refresh(); });
+  chips('discNav', 'd', CUR_DISC, [...new Set(ALL_ROWS.map(r => r.Disciplina).filter(Boolean))].sort(), DISC_LABEL, v => { CUR_DISC = v; refresh(); });
+  const base = ALL_ROWS.filter(r => pasa(r, 'i'));
+  const personas = [...new Set(ALL_ROWS.map(personOf).filter(Boolean))].sort((a,b) => a.localeCompare(b));
+  $('personFilter').innerHTML = `<option value="ALL">Todos los integrantes (${base.length})</option>` +
+    personas.map(p => `<option value="${escapeHtml(p)}">${escapeHtml(p)} (${base.filter(r => personOf(r) === p).length})</option>`).join('');
+  $('personFilter').value = CUR_PERSON;
 }
-const visible = r => (CUR_PROJECT === 'ALL' || r.Proyecto === CUR_PROJECT) && (CUR_MONTH === 'ALL' || r._month === CUR_MONTH);
+function refresh(){ fillFilters(); applyProject(CUR_PROJECT); }
 
 function applyProject(project){
   CUR_PROJECT = project;
   const rows = ALL_ROWS.filter(visible);
   const closed = stateCount(rows, 'CLOSED');
   const closedPct = rows.length ? Math.round(100*closed/rows.length) : 0;
-  document.querySelectorAll('.project-btn').forEach(b => b.classList.toggle('active', b.dataset.project === project));
   $('sidebarDonut').style.setProperty('--pct', closedPct);
   $('sidebarDonut').style.setProperty('--ring-color', closedRingColor(closedPct));
   $('sidebarPct').textContent = closedPct + '%';
@@ -394,7 +417,9 @@ function applyProject(project){
   renderRoster(rows);
 
   $('summarySub').textContent = project === 'ALL' ? 'Métricas globales del portafolio' : 'Métricas independientes del proyecto ' + project;
-  $('reviewBadge').textContent = `${rows.length} revisiones · ` + (project === 'ALL' ? `${PROJECTS.length} proyecto${PROJECTS.length === 1 ? '' : 's'}` : project) + (CUR_MONTH === 'ALL' ? '' : ' · ' + MONTH_LABEL(CUR_MONTH));
+  const filtros = [project === 'ALL' ? `${PROJECTS.length} proyecto${PROJECTS.length === 1 ? '' : 's'}` : project,
+    CUR_MONTH === 'ALL' ? '' : MONTH_LABEL(CUR_MONTH), CUR_DISC === 'ALL' ? '' : DISC_LABEL(CUR_DISC), CUR_PERSON === 'ALL' ? '' : CUR_PERSON].filter(Boolean);
+  $('reviewBadge').textContent = `${rows.length} revisiones · ` + filtros.join(' · ');
 
   const ciclo = numeric(rows, 'HrsCiclo'), espera = numeric(rows, '_espera');
   $('kpiTotal').textContent = rows.length;
@@ -410,7 +435,7 @@ function applyProject(project){
   // Resumen por proyecto (anillos)
   const projs = project === 'ALL' ? PROJECTS : [project];
   $('projectGrid').innerHTML = projs.map(p => {
-    const rs = ALL_ROWS.filter(r => r.Proyecto === p && (CUR_MONTH === 'ALL' || r._month === CUR_MONTH));
+    const rs = ALL_ROWS.filter(r => r.Proyecto === p && pasa(r, 'p'));
     const c = stateCount(rs, 'CLOSED'), pct = rs.length ? Math.round(100*c/rs.length) : 0;
     return `<article class="project-card"><div class="project-card-title">${escapeHtml(p)}</div><div class="project-ring" style="--pct:${pct};--ring:${projectRingColor(pct)}"><div class="project-ring-center"><strong>${pct}%</strong><span>cerradas</span></div></div><div class="project-card-foot"><span>${c} cerradas</span><span>${rs.length} total</span></div></article>`;
   }).join('');
@@ -461,9 +486,9 @@ $('viewJornada').textContent = `Lun–Vie ${H_INI}–${H_FIN} h`;
 $('viewZona').textContent = `UTC−${Math.abs(META.zona || -6)}`;
 $('heroSub').textContent = `${PROJECTS.length} proyecto${PROJECTS.length === 1 ? '' : 's'} · horas hábiles · responsables y tiempos de revisión`;
 
-$('resetFilters').addEventListener('click', () => { CUR_MONTH = 'ALL'; fillMonths(); applyProject('ALL'); });
-$('monthFilter').addEventListener('change', e => { CUR_MONTH = e.target.value; applyProject(CUR_PROJECT); });
-fillProjects(); fillMonths(); applyProject('ALL');
+$('resetFilters').addEventListener('click', () => { CUR_PROJECT = CUR_MONTH = CUR_DISC = CUR_PERSON = 'ALL'; refresh(); });
+$('personFilter').addEventListener('change', e => { CUR_PERSON = e.target.value; refresh(); });
+refresh();
 })();
 </script>
 </body>

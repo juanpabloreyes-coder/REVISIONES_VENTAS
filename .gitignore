@@ -10,3 +10,5 @@ Automation/
 Thumbs.db
 Desktop.ini
 ~$*
+
+*.before-*.ps1

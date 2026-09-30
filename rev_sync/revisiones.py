@@ -17,6 +17,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .aps import nombre_carpeta
+from .personas import disciplina as disciplina_por_nombre
 
 log = logging.getLogger("rev_sync.revisiones")
 
@@ -146,7 +147,7 @@ class Documentos:
         return self.carpetas[fid]
 
     def resolver(self, lin):
-        if lin in self.cache:
+        if lin in self.cache and "ruta" in self.cache[lin]:
             return self.cache[lin]
         j = self.aps.item(self.pid, lin)
         d = (j or {}).get("data")
@@ -162,9 +163,23 @@ class Documentos:
                 break
             cadena.append(c["nombre"])
             fid = c["parent"]
-        info = {"nombre": nombre, "proyecto": cadena[-1] if cadena else None}
+        # ruta = carpetas debajo del proyecto, de arriba hacia abajo (p.ej. ["01_D&I", "011_WIP", "Arquitectura"])
+        info = {"nombre": nombre, "proyecto": cadena[-1] if cadena else None, "ruta": list(reversed(cadena[:-1]))}
         self.cache[lin] = info
         return info
+
+
+def disciplina_documento(info):
+    """Disciplina del documento revisado: primero por sus carpetas (la de disciplina dentro de 011_WIP,
+    como en PLANOS), si no por el nombre del archivo (ARQ, EST, ELE, ESP, MEC, PLO)."""
+    ruta = (info or {}).get("ruta") or []
+    wip = [i for i, c in enumerate(ruta) if c.strip().upper() == "011_WIP"]
+    candidatas = ruta[wip[-1] + 1:] if wip else ruta
+    for c in candidatas:
+        d = disciplina_por_nombre(c)
+        if d != "SIN DISCIPLINA":
+            return d
+    return disciplina_por_nombre((info or {}).get("nombre"))
 
 
 # ------------------------------------------------------------------ construccion
@@ -203,13 +218,17 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
             f_fin = a_local(r.get("finishedAt") or r.get("approvedAt"), tz)
 
         # Documentos -> proyecto (el mas frecuente entre los archivos de la revision)
-        proyectos, archivos = {}, []
+        proyectos, archivos, discs = {}, [], {}
         for v in det.get("versions") or []:
             archivos.append(v.get("name"))
             info = docs.resolver(v.get("itemUrn") or linaje(v.get("urn")))
             if info and info.get("proyecto"):
                 proyectos[info["proyecto"]] = proyectos.get(info["proyecto"], 0) + 1
+            dsc = disciplina_documento(info or {"nombre": v.get("name")})
+            discs[dsc] = discs.get(dsc, 0) + 1
         proyecto = max(proyectos, key=proyectos.get) if proyectos else None
+        conocidas = {k: n for k, n in discs.items() if k != "SIN DISCIPLINA"}
+        disciplina = max(conocidas, key=conocidas.get) if conocidas else "SIN DISCIPLINA"
         if not proyecto:
             sin_proyecto += 1
 
@@ -251,6 +270,7 @@ def construir(revs, detalle, flujos, docs, personas, cfg, tz):
             "Flujo": flujo.get("name"),
             "Initiator": iniciador or "Usuario no encontrado",
             "Equipo": equipo,
+            "Disciplina": disciplina,
             "Integrante": integrante if equipo != "SIN EQUIPO" else None,
             "FechaInitiator": _txt(f_ini),
             "Aprobador": aprobador,
