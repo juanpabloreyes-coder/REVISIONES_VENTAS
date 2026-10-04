@@ -12,3 +12,5 @@ Desktop.ini
 ~$*
 
 *.before-*.ps1
+
+Automation/actualizar_todos*.log
